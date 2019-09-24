@@ -8,4 +8,4 @@ PROXY = {
     }
 }
 
-
+API_KEY = os.environ["BOT_TOKEN"]
