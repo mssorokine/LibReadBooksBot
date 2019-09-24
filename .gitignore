@@ -82,7 +82,6 @@ celerybeat-schedule
 *.sage.py
 
 # Environments
-.vscode
 .env
 .venv
 env/
@@ -125,7 +124,6 @@ $RECYCLE.BIN/
 *.msix
 *.msm
 *.msp
-*.log
 
 # Windows shortcuts
 *.lnk
