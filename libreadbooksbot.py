@@ -38,7 +38,7 @@ def error(bot, update):
 
 def main():
 
-    readbooksbot = Updater(settings.API_KEY, request_kwargs=settings.PROXY)
+    readbooksbot = Updater(settings.API_KEY)
 
     dp = readbooksbot.dispatcher
     dp.add_handler(CommandHandler("start", start_dialog, pass_user_data=True))
