@@ -6,4 +6,4 @@ PROXY = {
     }
 }
 
-API_KEY = "828996500:AAGIviPaKqTCwbyJuHeYLolUHtjvfwtm4Ew"
+API_KEY = "токен"
