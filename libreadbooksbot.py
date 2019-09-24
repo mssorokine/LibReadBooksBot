@@ -3,18 +3,12 @@ import logging
 from telegram import ReplyKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
+import settings
+
 logging.basicConfig(format='%(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO,
                     filename='bot.log'
 )
-
-PROXY = {
-    'proxy_url': 'socks5://t3.learn.python.ru:1080',
-    'urllib3_proxy_kwargs': {
-        'username': 'learn', 
-        'password': 'python'
-    }
-}
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +38,7 @@ def error(bot, update):
 
 def main():
 
-    readbooksbot = Updater("828996500:AAGIviPaKqTCwbyJuHeYLolUHtjvfwtm4Ew", request_kwargs=PROXY)
+    readbooksbot = Updater(settings.API_KEY, request_kwargs=settings.PROXY)
 
     dp = readbooksbot.dispatcher
     dp.add_handler(CommandHandler("start", start_dialog, pass_user_data=True))
