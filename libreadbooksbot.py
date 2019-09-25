@@ -14,10 +14,9 @@ logger = logging.getLogger(__name__)
 
 def start_dialog(bot, update, user_data):
 
-    user = update.message.from_user
-    user_firstname = user["first_name"]
-    user_username = user["username"]
-    user_lastname = user["last_name"]
+    user_firstname = update.effective_user["first_name"]
+    user_username = update.effective_user["username"]
+    user_lastname = update.effective_user["last_name"]
 
     if user_username == None:
         update.message.reply_text("Привет, {} {}."
