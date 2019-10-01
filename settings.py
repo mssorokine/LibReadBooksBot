@@ -8,7 +8,7 @@ PROXY = {
     }
 }
 
-MONGO_LINK = "mongodb+srv://readbooksbot:rnG4QQU4GZ7gvTGT@booksbotcluster-y09mz.mongodb.net/books"
+MONGO_LINK = "mongodb+srv://readbooksbot:RK1AezPsXwuCEa2x@booksbotcluster-y09mz.mongodb.net/books"
 
 MONGO_DB = "books"
 
