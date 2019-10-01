@@ -1,4 +1,4 @@
-import os
+import os, sys
 
 PROXY = {
     'proxy_url': 'socks5://t3.learn.python.ru:1080',
