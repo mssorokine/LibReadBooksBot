@@ -13,15 +13,7 @@ def get_or_create_user(db, message):
             "username": message.from_user.username,
             "books_count": 0,
             "chat_id": message.chat_id,
-            "books": [{
-                "name": "",
-                "author": "",
-                "start_date": "",
-                "read_by": "",
-                "favorite": "",
-                "in_progress": "",
-                "days_count": 0
-            }]
+            "books": []
         }
         db.users.insert_one(user)
     return user
