@@ -96,7 +96,7 @@ def add_book_author(update, context):
         {'$addToSet': {'books': {'name': context.user_data["book_name"], 'author': context.user_data["book_author"]}}}
     )
 
-    update.message.reply_text(f'Вы добавили книгу "{context.user_data["book_name"]}" автора "{context.user_data["book_author"]}"')
+    update.message.reply_text(f'Вы добавили книгу "{context.user_data["book_name"]}" автора "{context.user_data["book_author"]}"', reply_markup=markup_main)
 
     return CHOOSING_MAIN
     
