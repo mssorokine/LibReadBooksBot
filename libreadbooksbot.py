@@ -264,8 +264,7 @@ def books_button(update, context):
 
 
             if 'start_date' in readed_book:
-                db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 
-                'books.$.start_date': now_date, 'books.$.book_days': book_days, 'books.$.read_by': True}})
+                db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 'books.$.book_days': book_days, 'books.$.read_by': True}})
                 query.edit_message_text(text='Книга "{}" добавлена в прочитанные.'.format(user_book_name_strip))
             else:
                 db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 
