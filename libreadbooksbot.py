@@ -157,52 +157,55 @@ def my_book_information(update, context):
 
     if user_text == 'Все книги':
 
-        for user in db.users.find({'user_id': user_id}):
-            books = user['books']
-
-            for book in books:
-                get_book_name = book.get('name')
-                get_book_author = book.get('author')
-                update.message.reply_text(f'{get_book_name} - {get_book_author}', reply_markup=inline_markup)
+        user_books = db.users.find_one({'user_id': user_id})['books']
+        
+        if user_books == []:
+            update.message.reply_text('У вас нет добавленных книг')
+            
+        else:
+            for books in user_books:
+                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=inline_markup)
     
     elif user_text == 'Избранные':
+        
+        query_favorites = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
+        "cond": {"$eq": ['$$item.favorite', True]}}}}}])
+        result_favorites = query_favorites.next()
+        user_books = result_favorites['books']
 
-        for user in db.users.find({'user_id': user_id}):
-            books = user['books']
-            
-            for book in books:
-                get_book_name = book.get('name')
-                get_book_author = book.get('author')
-                favorite_book = book.get('favorite')
-                
-                if favorite_book:
-                    update.message.reply_text(f'{get_book_name} - {get_book_author}', reply_markup=del_favorits_markup)
+        if user_books == []:
+            update.message.reply_text('У вас нет избранных книг')
+        else:
+            for books in user_books:
+                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=del_favorits_markup)
+
 
     elif user_text == 'Отслеживаемые':
 
-        for user in db.users.find({'user_id': user_id}):
-            books = user['books']
-            
-            for book in books:
-                get_book_name = book.get('name')
-                get_book_author = book.get('author')
-                in_progress_book = book.get('in_progress')
-                
-                if in_progress_book:
-                    update.message.reply_text(f'{get_book_name} - {get_book_author}', reply_markup=del_progress_markup)         
+        query_in_progress = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
+        "cond": {"$eq": ['$$item.in_progress', True]}}}}}])
+        result_in_progress = query_in_progress.next()
+        user_books = result_in_progress['books']
+
+        if user_books == []:
+            update.message.reply_text('У вас нет отслеживаемых книг')
+        else:
+            for books in user_books:
+                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=del_progress_markup)         
 
     elif user_text == 'Прочитанные':
 
-        for user in db.users.find({'user_id': user_id}):
-            books = user['books']
-            
-            for book in books:
-                get_book_name = book.get('name')
-                get_book_author = book.get('author')
-                read_by = book.get('read_by')
-                
-                if read_by:
-                    update.message.reply_text(f'{get_book_name} - {get_book_author}', reply_markup=del_read_by_markup)
+        query_read_by = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
+        "cond": {"$eq": ['$$item.read_by', True]}}}}}])
+        result_read_by = query_read_by.next()
+        user_books = result_read_by['books']
+
+        if user_books == []:
+            update.message.reply_text('У вас нет прочитанных книг')
+        else:
+            for books in user_books:
+                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=del_read_by_markup)
+
     else:
         
         update.message.reply_text('Возврат в главное меню', reply_markup=markup_main)
@@ -245,9 +248,29 @@ def books_button(update, context):
 
     elif query_data == 'Прочитал':
 
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 
-        'books.$.read_by': True}})
-        query.edit_message_text(text='Книга "{}" добавлена в прочитанные.'.format(user_book_name_strip))
+        user_book_read_by_query = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
+        "cond": {"$eq": ['$$item.name', user_book_name_strip]}}}}}])
+
+        user_book_read_by = user_book_read_by_query.next()
+        book_read_by = user_book_read_by['books']
+        
+
+        for readed_book in book_read_by:
+
+            start_date_book_str = readed_book.get('start_date')
+            start_date_book = datetime.strptime(start_date_book_str, '%Y-%m-%d')
+            book_days = date_now - start_date_book
+            book_days = book_days.days
+
+
+            if 'start_date' in readed_book:
+                db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 'books.$.book_days': book_days, 'books.$.read_by': True}})
+                query.edit_message_text(text='Книга "{}" добавлена в прочитанные.'.format(user_book_name_strip))
+            else:
+                db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 
+                'books.$.start_date': now_date, 'books.$.book_days': 1, 'books.$.read_by': True}})
+                query.edit_message_text(text='Книга "{}" добавлена в прочитанные.'.format(user_book_name_strip))
+
     
     elif query_data == 'Удалить из избранного':
         
