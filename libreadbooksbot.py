@@ -27,6 +27,9 @@ keyboard_user_addition = [['В избранное', 'Прочитал'],
 keyboard_search_book = [['По названию', 'По автору'],
                             ['Главное меню']]
 
+keyboard_statistic = [['Среднее время', 'Количество книг'],
+                            ['Главное меню']]
+
 keyboard_my_books = [['Избранные', 'Отслеживаемые', 'Прочитанные'],
                         ['Все книги'],
                         ['Главное меню']]
@@ -45,6 +48,7 @@ keyboard_del_from_favorits = [[InlineKeyboardButton('Удалить', callback_d
 keyboard_del_from_progress = [[InlineKeyboardButton('Удалить', callback_data='Удалить из отслеживаемого')]]
 keyboard_del_from_readby = [[InlineKeyboardButton('Удалить', callback_data='Удалить из прочитанного')]]
 
+markup_statistic = ReplyKeyboardMarkup(keyboard_statistic, one_time_keyboard=True, resize_keyboard=True)
 markup_main = ReplyKeyboardMarkup(keyboard_main, one_time_keyboard=True, resize_keyboard=True)
 markup_add_book = ReplyKeyboardMarkup(keyboard_add_book, one_time_keyboard=True, resize_keyboard=True)
 markup_my_books = ReplyKeyboardMarkup(keyboard_my_books, resize_keyboard=True)
@@ -104,6 +108,52 @@ def add_book_author(update, context):
 
     return CHOOSING_MAIN
     
+def my_book_statistic(update, context):
+    user = get_or_create_user(db, update.message)
+    user_id = user['user_id']
+
+    update.message.reply_text(
+        'Узнай свою статистику', reply_markup=markup_statistic)
+
+def my_book_avg_time(update, context):
+    user = get_or_create_user(db, update.message)
+    user_id = user['user_id']
+    text = update.message.text
+    print(text)
+    q = db.users.aggregate([
+    { "$match": {"user_id": user_id}},
+    { "$project": {
+        "books": {"$filter": {
+            "input": "$books",
+            "as": "item",
+            "cond": {"$eq": ['$$item.read_by', True]}
+        }}
+    }}
+])
+    books_read_user = q.next()
+    read_books_user = books_read_user.get('books')
+    books_days_total = 0
+    for books in read_books_user:
+        user_start_date_str = books.get('start_date')
+        user_end_date_str = books.get('end_date')
+        user_start_date = datetime.strptime(user_start_date_str, '%Y-%m-%d')
+        user_end_date = datetime.strptime(user_end_date_str, '%Y-%m-%d')
+        user_book_delta = user_end_date - user_start_date
+        user_book_delta_days = user_book_delta.days
+        user_book_delta_days = abs(user_book_delta_days)
+        books_days_total += user_book_delta_days
+    lenght_read_books_user = len(read_books_user)
+    avg_time_book_read = books_days_total / lenght_read_books_user
+    avg_time_book_read = int(avg_time_book_read)
+    if text == 'Среднее время':
+        update.message.reply_text(
+        f'Среднее время на чтение одной книги - {avg_time_book_read}', reply_markup=markup_main)
+    else:
+        update.message.reply_text(
+        f'Ты прочитал {lenght_read_books_user} книг(и)', reply_markup=markup_main)
+    return CHOOSING_MAIN
+
+
 def my_book_goal(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -341,6 +391,12 @@ def main():
                             MessageHandler(Filters.regex('^(Добавить книгу)$'), add_book),
 
                             MessageHandler(Filters.regex('^(Мои цели)$'), my_book_goal),
+
+                            MessageHandler(Filters.regex('^(Статистика)$'), my_book_statistic),
+
+                            MessageHandler(Filters.regex('^(Среднее время)$'), my_book_avg_time),
+
+                            MessageHandler(Filters.regex('^(Количество книг)$'), my_book_avg_time),
 
                             MessageHandler(Filters.regex('^(Создать цель)$'), add_my_book_goal),
 
