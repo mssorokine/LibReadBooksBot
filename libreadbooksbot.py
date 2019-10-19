@@ -13,7 +13,7 @@ logging.basicConfig(format='%(name)s - %(levelname)s - %(message)s',
 
 logger = logging.getLogger(__name__)
 
-CHOOSING_MAIN, TYPING_REPLY, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE = range(6)
+CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE = range(6)
 
 keyboard_main = [['Мои книги', 'Мои цели', 'Статистика'],
                     ['Добавить книгу']]
@@ -31,6 +31,9 @@ keyboard_my_books = [['Избранные', 'Отслеживаемые', 'Пр�
                         ['Все книги'],
                         ['Главное меню']]
 
+keyboard_goal_variables = [['Создать цель', 'Изменить цель', 'Удалить цель'],
+
+                            ['Главное меню']]
 keyboard_my_books_inline = [[
             InlineKeyboardButton('Читаю', callback_data='Читаю'),
             InlineKeyboardButton('Избранное', callback_data='Избранное'),
@@ -45,6 +48,7 @@ keyboard_del_from_readby = [[InlineKeyboardButton('Удалить', callback_dat
 markup_main = ReplyKeyboardMarkup(keyboard_main, one_time_keyboard=True, resize_keyboard=True)
 markup_add_book = ReplyKeyboardMarkup(keyboard_add_book, one_time_keyboard=True, resize_keyboard=True)
 markup_my_books = ReplyKeyboardMarkup(keyboard_my_books, resize_keyboard=True)
+markup_goal_variables = ReplyKeyboardMarkup(keyboard_goal_variables, resize_keyboard=True)
 inline_markup = InlineKeyboardMarkup(keyboard_my_books_inline)
 del_favorits_markup = InlineKeyboardMarkup(keyboard_del_from_favorits)
 del_progress_markup = InlineKeyboardMarkup(keyboard_del_from_progress)
@@ -110,9 +114,31 @@ def my_book_goal(update, context):
 
     logger.info('Add books goal with username %s', username)
     update.message.reply_text(
-        'Напиши сколько книг ты сможешь осилить, я буду следить за твои прогрессом\n')
+        'Создай себе книжную цель', reply_markup=markup_goal_variables)
     
-    return TYPING_REPLY
+
+def add_my_book_goal(update, context):
+
+    user = get_or_create_user(db, update.message)
+    username = user['username']
+    user_id = user['user_id']
+
+    text = update.message.text
+    context.user_data['choice'] = text
+    user_choice = context.user_data['choice']
+
+    if user_choice == 'Удалить цель':
+
+        db.users.update_one({'user_id': user_id}, {'$set': {'books_count': 0}})
+        update.message.reply_text('Кажется у тебя больше нет цели. Это очень грустно.', reply_markup=markup_main)
+
+        return CHOOSING_MAIN
+
+    else:
+        
+        update.message.reply_text('Укажи количество книг, которые ты хочешь прочитать')
+        return ADD_MY_GOAL
+
 
 def received_book_information(update, context):
     
@@ -126,20 +152,20 @@ def received_book_information(update, context):
     goal_choice = user_data['choice']
     user_data[goal_choice] = user_text
     del user_data['choice']
-    
-    logger.info('Updating books count in MONGO by user %s', username)
-    
-    user_text = int(user_text)
 
-    db.users.update_one(
-        {'user_id': user_id},
-        {'$set': {'books_count': user_text}}
-    )
-        
+    logger.info('Updating books count in MONGO by user %s', username)
+
+    user_text = int(user_text)
+    
+    db.users.update_one({'user_id': user_id}, {'$set': {'books_count': user_text}})
+    
     if user_text <= 30:
-        update.message.reply_text('Ты собрался прочитать {} книг, для начала неплохо, желаю удачи!'.format(user_text))
+        update.message.reply_text('Ты собрался прочитать {} книг, для начала неплохо, желаю удачи!'.format(user_text), reply_markup=markup_main)
     elif user_text > 30:
-        update.message.reply_text('Ты собрался прочитать {} книг, ну ты просто книжный монстр!'.format(user_text))
+        update.message.reply_text('Ты собрался прочитать {} книг, ну ты просто книжный монстр!'.format(user_text), reply_markup=markup_main)
+    
+    return CHOOSING_MAIN
+
 
 def my_books(update, context):
 
@@ -316,6 +342,12 @@ def main():
 
                             MessageHandler(Filters.regex('^(Мои цели)$'), my_book_goal),
 
+                            MessageHandler(Filters.regex('^(Создать цель)$'), add_my_book_goal),
+
+                            MessageHandler(Filters.regex('^(Изменить цель)$'), add_my_book_goal),
+
+                            MessageHandler(Filters.regex('^(Удалить цель)$'), add_my_book_goal),
+
                             MessageHandler(Filters.regex('^(Главное меню)$'), start_conversation),
 
                             MessageHandler(Filters.regex('^(Мои книги)$'), my_books)
@@ -325,7 +357,7 @@ def main():
             ADD_AUTHOR: [MessageHandler(Filters.text, add_book_author)],
             ADD_NAME: [MessageHandler(Filters.text, add_book_name)],
             MY_BOOK: [MessageHandler(Filters.text, my_book_information)],
-            TYPING_REPLY: [MessageHandler(Filters.text, received_book_information)
+            ADD_MY_GOAL: [MessageHandler(Filters.text, received_book_information)
                            ],
         
         },
