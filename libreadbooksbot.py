@@ -31,9 +31,12 @@ keyboard_my_books = [['Избранные', 'Отслеживаемые', 'Пр�
                         ['Все книги'],
                         ['Главное меню']]
 
-keyboard_goal_variables = [['Создать цель', 'Изменить цель', 'Удалить цель'],
+keyboard_goal_variables = [['Создать цель', 'Изменить цель'], 
+
+                            ['Удалить цель', 'Посмотреть цель'],
 
                             ['Главное меню']]
+
 keyboard_my_books_inline = [[
             InlineKeyboardButton('Читаю', callback_data='Читаю'),
             InlineKeyboardButton('Избранное', callback_data='Избранное'),
@@ -122,20 +125,22 @@ def add_my_book_goal(update, context):
     user = get_or_create_user(db, update.message)
     username = user['username']
     user_id = user['user_id']
+    user_books_count = user['books_count']
 
     text = update.message.text
     context.user_data['choice'] = text
     user_choice = context.user_data['choice']
-
+        
     if user_choice == 'Удалить цель':
-
         db.users.update_one({'user_id': user_id}, {'$set': {'books_count': 0}})
         update.message.reply_text('Кажется у тебя больше нет цели. Это очень грустно.', reply_markup=markup_main)
-
+        return CHOOSING_MAIN
+            
+    elif user_choice == 'Посмотреть цель':
+        update.message.reply_text(f'Твоя цель - {user_books_count} книг(и)', reply_markup=markup_main)
         return CHOOSING_MAIN
 
     else:
-        
         update.message.reply_text('Укажи количество книг, которые ты хочешь прочитать')
         return ADD_MY_GOAL
 
@@ -155,14 +160,13 @@ def received_book_information(update, context):
 
     logger.info('Updating books count in MONGO by user %s', username)
 
-    user_text = int(user_text)
+    try: 
+        user_text = int(user_text)
+        db.users.update_one({'user_id': user_id}, {'$set': {'books_count': user_text}})
+        update.message.reply_text('Ты собрался прочитать {} книг, желаю удачи!'.format(user_text), reply_markup=markup_main)
     
-    db.users.update_one({'user_id': user_id}, {'$set': {'books_count': user_text}})
-    
-    if user_text <= 30:
-        update.message.reply_text('Ты собрался прочитать {} книг, для начала неплохо, желаю удачи!'.format(user_text), reply_markup=markup_main)
-    elif user_text > 30:
-        update.message.reply_text('Ты собрался прочитать {} книг, ну ты просто книжный монстр!'.format(user_text), reply_markup=markup_main)
+    except ValueError:
+        update.message.reply_text('Кажется ты ввел не число, попробуй еще раз', reply_markup=markup_main)
     
     return CHOOSING_MAIN
 
@@ -347,6 +351,8 @@ def main():
                             MessageHandler(Filters.regex('^(Изменить цель)$'), add_my_book_goal),
 
                             MessageHandler(Filters.regex('^(Удалить цель)$'), add_my_book_goal),
+
+                            MessageHandler(Filters.regex('^(Посмотреть цель)$'), add_my_book_goal),
 
                             MessageHandler(Filters.regex('^(Главное меню)$'), start_conversation),
 
