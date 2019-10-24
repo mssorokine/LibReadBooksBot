@@ -209,7 +209,7 @@ def my_book_information(update, context):
             "user_keyboard": del_progress_markup,
         },
         "Прочитанные": {
-            ""
+            
             "bot_message_query": "У вас нет прочитанных книг",
             "user_filter_query": {"$eq": ['$$item.read_by', True]},
             "user_keyboard": del_read_by_markup,
