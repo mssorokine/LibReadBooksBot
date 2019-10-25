@@ -184,7 +184,7 @@ def query_user_book(user_id, update, **kwargs):
     "cond": kwargs['user_filter_query']}}}}])
     result_books = query_books.next()
     user_books = result_books['books']
-    if user_books == []:
+    if not user_books:
         update.message.reply_text(kwargs['bot_message_query'])
     else:
         get_keyboard = kwargs['user_keyboard']
@@ -220,7 +220,7 @@ def my_book_information(update, context):
 
         user_books = db.users.find_one({'user_id': user_id})['books']
         
-        if user_books == []:
+        if not user_books:
             update.message.reply_text('У вас нет добавленных книг')
             
         else:
