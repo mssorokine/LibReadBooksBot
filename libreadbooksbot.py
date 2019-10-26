@@ -119,8 +119,7 @@ def my_book_avg_time(update, context):
     user = get_or_create_user(db, update.message)
     user_id = user['user_id']
     text = update.message.text
-    print(text)
-    q = db.users.aggregate([
+    query_to_db = db.users.aggregate([
     { "$match": {"user_id": user_id}},
     { "$project": {
         "books": {"$filter": {
@@ -130,8 +129,8 @@ def my_book_avg_time(update, context):
         }}
     }}
 ])
-    books_read_user = q.next()
-    read_books_user = books_read_user.get('books')
+    books_read_user = query_to_db.next()
+    read_books_user = books_read_user.get('books', [])
     books_days_total = 0
     for books in read_books_user:
         user_start_date_str = books.get('start_date')
