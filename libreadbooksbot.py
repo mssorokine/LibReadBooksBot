@@ -2,6 +2,8 @@ import logging
 
 from datetime import datetime
 
+import math
+
 from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler)
 
@@ -13,7 +15,9 @@ logging.basicConfig(format='%(name)s - %(levelname)s - %(message)s',
 
 logger = logging.getLogger(__name__)
 
-CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE = range(6)
+CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE, CHANGE_PAGE = range(7)
+
+PAGE_LENGTH=5
 
 keyboard_main = [['Мои книги', 'Мои цели', 'Статистика'],
                     ['Добавить книгу']]
@@ -26,6 +30,12 @@ keyboard_user_addition = [['В избранное', 'Прочитал'],
 
 keyboard_search_book = [['По названию', 'По автору'],
                             ['Главное меню']]
+
+keyboard_book_pagination = [['Предыдущие', 'Cледующие'],
+                            ['Главное меню']]
+
+keyboard_next_page = [['Cледующие'],
+                        ['Главное меню']]
 
 keyboard_my_books = [['Избранные', 'Отслеживаемые', 'Прочитанные'],
                         ['Все книги'],
@@ -52,6 +62,8 @@ markup_main = ReplyKeyboardMarkup(keyboard_main, one_time_keyboard=True, resize_
 markup_add_book = ReplyKeyboardMarkup(keyboard_add_book, one_time_keyboard=True, resize_keyboard=True)
 markup_my_books = ReplyKeyboardMarkup(keyboard_my_books, resize_keyboard=True)
 markup_goal_variables = ReplyKeyboardMarkup(keyboard_goal_variables, resize_keyboard=True)
+markup_book_pagination = ReplyKeyboardMarkup(keyboard_book_pagination, resize_keyboard=True)
+markup_next_page = ReplyKeyboardMarkup(keyboard_next_page, resize_keyboard=True)
 inline_markup = InlineKeyboardMarkup(keyboard_my_books_inline)
 del_favorits_markup = InlineKeyboardMarkup(keyboard_del_from_favorits)
 del_progress_markup = InlineKeyboardMarkup(keyboard_del_from_progress)
@@ -179,17 +191,71 @@ def my_books(update, context):
 
     return MY_BOOK
 
-def query_user_book(user_id, update, **kwargs):
-    query_books = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
-    "cond": kwargs['user_filter_query']}}}}])
-    result_books = query_books.next()
-    user_books = result_books['books']
+def query_user_book(user_id, update, context, current_page=1, **kwargs):
+    
+    user_filter = kwargs['user_filter_query']
+    
+    if not user_filter:
+        user_books = db.users.find_one({'user_id': user_id})['books']
+
+    else: 
+        query_books = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
+        "cond": kwargs['user_filter_query']}}}}])
+        result_books = query_books.next()
+        user_books = result_books['books']
+    
+    len_books = len(user_books)
+    pages_count = math.ceil(len_books / PAGE_LENGTH)
+    context.user_data['current_page'] = current_page
+    context.user_data['list_params'] = kwargs
+    context.user_data['pages_count'] = pages_count
+    kwargs['len_books'] = len_books
+    
+
     if not user_books:
         update.message.reply_text(kwargs['bot_message_query'])
     else:
         get_keyboard = kwargs['user_keyboard']
+        if current_page == 1:
+            user_books = user_books[0:5]
+        elif current_page == pages_count:
+            user_books = user_books[(current_page-1)*PAGE_LENGTH: len_books]
+        else:
+            user_books = user_books[(current_page-1)*PAGE_LENGTH: current_page*PAGE_LENGTH]
+
         for books in user_books:
             update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=get_keyboard)
+
+def change_page(update, context):
+
+    user = get_or_create_user(db, update.message)
+    user_id = user['user_id']
+
+    user_text = update.message.text
+    user_text = user_text.strip()
+    list_params = context.user_data['list_params']
+    pages_count = context.user_data['pages_count']
+
+
+    if user_text == 'Cледующие':
+        next_page = context.user_data['current_page'] + 1
+        if next_page > pages_count:
+            update.message.reply_text('Книг больше нет, возвращаюсь в главное меню', reply_markup=markup_main)
+            return CHOOSING_MAIN
+        else:
+            context.user_data['current_page'] = next_page
+            query_user_book(user_id, update, context, current_page=next_page, **list_params)
+    elif user_text == 'Предыдущие':
+        previous_page = context.user_data['current_page'] - 1
+        if previous_page == 0:
+            update.message.reply_text('Книг больше нет, возвращаюсь в главное меню', reply_markup=markup_main)
+            return CHOOSING_MAIN
+        else:
+            context.user_data['current_page'] = previous_page
+            query_user_book(user_id, update, context, current_page=previous_page, **list_params)
+    else:
+        update.message.reply_text('Возврат в главное меню', reply_markup=markup_main)
+        return CHOOSING_MAIN
 
 def my_book_information(update, context):
 
@@ -213,27 +279,23 @@ def my_book_information(update, context):
             "bot_message_query": "У вас нет прочитанных книг",
             "user_filter_query": {"$eq": ['$$item.read_by', True]},
             "user_keyboard": del_read_by_markup,
+        },
+
+        "Все книги": {
+            "bot_message_query": "У вас нет добавленных книг",
+            "user_filter_query": "",
+            "user_keyboard": inline_markup,
         }
     }
     
-    if user_text == 'Все книги':
-
-        user_books = db.users.find_one({'user_id': user_id})['books']
-        
-        if not user_books:
-            update.message.reply_text('У вас нет добавленных книг')
-            
-        else:
-            for books in user_books:
-                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=inline_markup)
+    if user_text in query_book_information:
+        books_query_result = query_user_book(user_id, update, context, **query_book_information[user_text])
+        print(books_query_result)
+        update.message.reply_text('Выберите действие', reply_markup=markup_book_pagination)
+        return CHANGE_PAGE
     
-    elif user_text in query_book_information:
-        query_user_book(user_id, update, **query_book_information[user_text])
-
-    else:
-        
+    else: 
         update.message.reply_text('Возврат в главное меню', reply_markup=markup_main)
-        
         return CHOOSING_MAIN
     
 
@@ -363,6 +425,7 @@ def main():
 
                             ],
 
+            CHANGE_PAGE: [MessageHandler(Filters.text, change_page)],
             ADD_AUTHOR: [MessageHandler(Filters.text, add_book_author)],
             ADD_NAME: [MessageHandler(Filters.text, add_book_name)],
             MY_BOOK: [MessageHandler(Filters.text, my_book_information)],
