@@ -217,7 +217,7 @@ def query_user_book(user_id, update, context, current_page=1, **kwargs):
     else:
         get_keyboard = kwargs['user_keyboard']
         if current_page == 1:
-            user_books = user_books[0:5]
+            user_books = user_books[0:PAGE_LENGTH]
         elif current_page == pages_count:
             user_books = user_books[(current_page-1)*PAGE_LENGTH: len_books]
         else:
