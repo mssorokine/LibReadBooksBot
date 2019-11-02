@@ -2,6 +2,8 @@ import logging
 
 from datetime import datetime
 
+import math
+
 from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler)
 
@@ -13,7 +15,9 @@ logging.basicConfig(format='%(name)s - %(levelname)s - %(message)s',
 
 logger = logging.getLogger(__name__)
 
-CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE = range(6)
+CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE, CHANGE_PAGE = range(7)
+
+PAGE_LENGTH=5
 
 keyboard_main = [['Мои книги', 'Мои цели', 'Статистика'],
                     ['Добавить книгу']]
@@ -27,16 +31,27 @@ keyboard_user_addition = [['В избранное', 'Прочитал'],
 keyboard_search_book = [['По названию', 'По автору'],
                             ['Главное меню']]
 
+
 keyboard_statistic = [['Среднее время', 'Количество книг'],
                             ['Главное меню']]
+
+keyboard_book_pagination = [['Предыдущие', 'Cледующие'],
+                            ['Главное меню']]
+
+keyboard_next_page = [['Cледующие'],
+                        ['Главное меню']]
+
 
 keyboard_my_books = [['Избранные', 'Отслеживаемые', 'Прочитанные'],
                         ['Все книги'],
                         ['Главное меню']]
 
-keyboard_goal_variables = [['Создать цель', 'Изменить цель', 'Удалить цель'],
+keyboard_goal_variables = [['Создать цель', 'Изменить цель'], 
+
+                            ['Удалить цель', 'Посмотреть цель'],
 
                             ['Главное меню']]
+
 keyboard_my_books_inline = [[
             InlineKeyboardButton('Читаю', callback_data='Читаю'),
             InlineKeyboardButton('Избранное', callback_data='Избранное'),
@@ -53,6 +68,8 @@ markup_main = ReplyKeyboardMarkup(keyboard_main, one_time_keyboard=True, resize_
 markup_add_book = ReplyKeyboardMarkup(keyboard_add_book, one_time_keyboard=True, resize_keyboard=True)
 markup_my_books = ReplyKeyboardMarkup(keyboard_my_books, resize_keyboard=True)
 markup_goal_variables = ReplyKeyboardMarkup(keyboard_goal_variables, resize_keyboard=True)
+markup_book_pagination = ReplyKeyboardMarkup(keyboard_book_pagination, resize_keyboard=True)
+markup_next_page = ReplyKeyboardMarkup(keyboard_next_page, resize_keyboard=True)
 inline_markup = InlineKeyboardMarkup(keyboard_my_books_inline)
 del_favorits_markup = InlineKeyboardMarkup(keyboard_del_from_favorits)
 del_progress_markup = InlineKeyboardMarkup(keyboard_del_from_progress)
@@ -171,20 +188,22 @@ def add_my_book_goal(update, context):
     user = get_or_create_user(db, update.message)
     username = user['username']
     user_id = user['user_id']
+    user_books_count = user['books_count']
 
     text = update.message.text
     context.user_data['choice'] = text
     user_choice = context.user_data['choice']
-
+        
     if user_choice == 'Удалить цель':
-
         db.users.update_one({'user_id': user_id}, {'$set': {'books_count': 0}})
         update.message.reply_text('Кажется у тебя больше нет цели. Это очень грустно.', reply_markup=markup_main)
-
+        return CHOOSING_MAIN
+            
+    elif user_choice == 'Посмотреть цель':
+        update.message.reply_text(f'Твоя цель - {user_books_count} книг(и)', reply_markup=markup_main)
         return CHOOSING_MAIN
 
     else:
-        
         update.message.reply_text('Укажи количество книг, которые ты хочешь прочитать')
         return ADD_MY_GOAL
 
@@ -204,14 +223,13 @@ def received_book_information(update, context):
 
     logger.info('Updating books count in MONGO by user %s', username)
 
-    user_text = int(user_text)
+    try: 
+        user_text = int(user_text)
+        db.users.update_one({'user_id': user_id}, {'$set': {'books_count': user_text}})
+        update.message.reply_text('Ты собрался прочитать {} книг, желаю удачи!'.format(user_text), reply_markup=markup_main)
     
-    db.users.update_one({'user_id': user_id}, {'$set': {'books_count': user_text}})
-    
-    if user_text <= 30:
-        update.message.reply_text('Ты собрался прочитать {} книг, для начала неплохо, желаю удачи!'.format(user_text), reply_markup=markup_main)
-    elif user_text > 30:
-        update.message.reply_text('Ты собрался прочитать {} книг, ну ты просто книжный монстр!'.format(user_text), reply_markup=markup_main)
+    except ValueError:
+        update.message.reply_text('Кажется ты ввел не число, попробуй еще раз', reply_markup=markup_main)
     
     return CHOOSING_MAIN
 
@@ -224,69 +242,123 @@ def my_books(update, context):
 
     return MY_BOOK
 
+def query_user_book(user_id, update, context, current_page=1, **kwargs):
+    
+    user_filter = kwargs['user_filter_query']
+    
+    if not user_filter:
+        user_books = db.users.find_one({'user_id': user_id})['books']
+
+    else: 
+        query_books = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
+        "cond": kwargs['user_filter_query']}}}}])
+        result_books = query_books.next()
+        user_books = result_books['books']
+    
+    len_books = len(user_books)
+    pages_count = math.ceil(len_books / PAGE_LENGTH)
+    context.user_data['current_page'] = current_page
+    context.user_data['list_params'] = kwargs
+    context.user_data['pages_count'] = pages_count
+    kwargs['len_books'] = len_books
+    
+
+    if not user_books:
+        update.message.reply_text(kwargs['bot_message_query'])
+    else:
+        get_keyboard = kwargs['user_keyboard']
+        if current_page == 1:
+            user_books = user_books[0:PAGE_LENGTH]
+        elif current_page == pages_count:
+            user_books = user_books[(current_page-1)*PAGE_LENGTH: len_books]
+        else:
+            user_books = user_books[(current_page-1)*PAGE_LENGTH: current_page*PAGE_LENGTH]
+
+        for books in user_books:
+            update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=get_keyboard)
+
+def change_page(update, context):
+
+    user = get_or_create_user(db, update.message)
+    user_id = user['user_id']
+
+    user_text = update.message.text
+    user_text = user_text.strip()
+    list_params = context.user_data['list_params']
+    pages_count = context.user_data['pages_count']
+
+
+    if user_text == 'Cледующие':
+        next_page = context.user_data['current_page'] + 1
+        if next_page > pages_count:
+            update.message.reply_text('Книг больше нет, возвращаюсь в главное меню', reply_markup=markup_main)
+            return CHOOSING_MAIN
+        else:
+            context.user_data['current_page'] = next_page
+            query_user_book(user_id, update, context, current_page=next_page, **list_params)
+    elif user_text == 'Предыдущие':
+        previous_page = context.user_data['current_page'] - 1
+        if previous_page == 0:
+            update.message.reply_text('Книг больше нет, возвращаюсь в главное меню', reply_markup=markup_main)
+            return CHOOSING_MAIN
+        else:
+            context.user_data['current_page'] = previous_page
+            query_user_book(user_id, update, context, current_page=previous_page, **list_params)
+    else:
+        update.message.reply_text('Возврат в главное меню', reply_markup=markup_main)
+        return CHOOSING_MAIN
+
 def my_book_information(update, context):
 
     user = get_or_create_user(db, update.message)
     user_id = user['user_id']
     user_text = update.message.text
 
-    if user_text == 'Все книги':
-
-        user_books = db.users.find_one({'user_id': user_id})['books']
-        
-        if user_books == []:
-            update.message.reply_text('У вас нет добавленных книг')
+    query_book_information = {
+        "Избранные": {
+            "bot_message_query": "У вас нет избранных книг",
+            "user_filter_query": {"$eq": ['$$item.favorite', True]},
+            "user_keyboard": del_favorits_markup,
+        },
+        "Отслеживаемые": {
+            "bot_message_query": "У вас нет отслеживаемых книг",
+            "user_filter_query": {"$eq": ['$$item.in_progress', True]},
+            "user_keyboard": del_progress_markup,
+        },
+        "Прочитанные": {
             
-        else:
-            for books in user_books:
-                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=inline_markup)
+            "bot_message_query": "У вас нет прочитанных книг",
+            "user_filter_query": {"$eq": ['$$item.read_by', True]},
+            "user_keyboard": del_read_by_markup,
+        },
+
+        "Все книги": {
+            "bot_message_query": "У вас нет добавленных книг",
+            "user_filter_query": "",
+            "user_keyboard": inline_markup,
+        }
+    }
     
-    elif user_text == 'Избранные':
-        
-        query_favorites = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
-        "cond": {"$eq": ['$$item.favorite', True]}}}}}])
-        result_favorites = query_favorites.next()
-        user_books = result_favorites['books']
-
-        if user_books == []:
-            update.message.reply_text('У вас нет избранных книг')
-        else:
-            for books in user_books:
-                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=del_favorits_markup)
-
-
-    elif user_text == 'Отслеживаемые':
-
-        query_in_progress = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
-        "cond": {"$eq": ['$$item.in_progress', True]}}}}}])
-        result_in_progress = query_in_progress.next()
-        user_books = result_in_progress['books']
-
-        if user_books == []:
-            update.message.reply_text('У вас нет отслеживаемых книг')
-        else:
-            for books in user_books:
-                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=del_progress_markup)         
-
-    elif user_text == 'Прочитанные':
-
-        query_read_by = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
-        "cond": {"$eq": ['$$item.read_by', True]}}}}}])
-        result_read_by = query_read_by.next()
-        user_books = result_read_by['books']
-
-        if user_books == []:
-            update.message.reply_text('У вас нет прочитанных книг')
-        else:
-            for books in user_books:
-                update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=del_read_by_markup)
-
-    else:
-        
+    if user_text in query_book_information:
+        books_query_result = query_user_book(user_id, update, context, **query_book_information[user_text])
+        print(books_query_result)
+        update.message.reply_text('Выберите действие', reply_markup=markup_book_pagination)
+        return CHANGE_PAGE
+    
+    else: 
         update.message.reply_text('Возврат в главное меню', reply_markup=markup_main)
-        
         return CHOOSING_MAIN
     
+
+def delete_books_data(user_id, user_book_name_strip, query, **kwargs):
+
+    db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$unset': kwargs['user_filter']})
+    query.edit_message_text(text=kwargs['bot_message'])
+
+def query_books_data(user_id, user_book_name_strip, query, **kwargs):
+
+    db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': kwargs['user_filter']})
+    query.edit_message_text(text=kwargs['bot_message'])
 
 def books_button(update, context):
 
@@ -306,63 +378,62 @@ def books_button(update, context):
     date_now = datetime.now()
     now_date = date_now.strftime('%Y-%m-%d')
 
-    if query_data == 'Слежу':
+    user_delete_options = {
+        "Удалить из избранного": {
+            "bot_message": "Книга удалена из избранного",
+            "user_filter": {'books.$.favorite': True},
+            },
+        "Удалить из отслеживаемого": {
+            "bot_message": "Книга удалена из отслеживаемого",
+            "user_filter": {'books.$.in_progress': True},
+            },
+        "Удалить из прочитанного": {
+            "bot_message": "Книга удалена из прочитанного",
+            "user_filter": {'books.$.end_date': now_date, 'books.$.read_by': True},
+        } 
+    }
 
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.in_progress': True}})
-        query.edit_message_text(text='Книга "{}" добавлена в отслеживаемые.'.format(user_book_name_strip))
+    user_query_options = {
+        "Слежу": {
+            "bot_message": "Книга добавлена в отслеживаемые",
+            "user_filter": {'books.$.in_progress': True},
+        },
+        "Избранное": {
+            "bot_message": "Книга добавлена в избранное",
+            "user_filter": {'books.$.favorite': True},
+        },
+        "Читаю": {
+            "bot_message": "Ты начал читать книгу",
+            "user_filter": {'books.$.start_date': now_date},
+        }
+    }
 
-    elif query_data == 'Избранное':
-
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.favorite': True}})
-        query.edit_message_text(text='Книга "{}" добавлена в избранное.'.format(user_book_name_strip))
-
-    elif query_data == 'Читаю':
-
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.start_date': now_date}})
-        query.edit_message_text(text='Ты начал читать книгу "{}".'.format(user_book_name_strip))
+    if query_data in user_query_options:
+        query_books_data(user_id, user_book_name_strip, query, **user_query_options[query_data])
+    
+    elif query_data in user_delete_options:
+        delete_books_data(user_id, user_book_name_strip, query, **user_delete_options[query_data])
 
     elif query_data == 'Прочитал':
-
         user_book_read_by_query = db.users.aggregate([{ "$match": {"user_id": user_id}}, { "$project": { "books": { "$filter": { "input": "$books", "as": "item", 
         "cond": {"$eq": ['$$item.name', user_book_name_strip]}}}}}])
 
         user_book_read_by = user_book_read_by_query.next()
         book_read_by = user_book_read_by['books']
+        readed_book = book_read_by[0]
+
+        start_date_book_str = readed_book.get('start_date')
         
-
-        for readed_book in book_read_by:
-
-            start_date_book_str = readed_book.get('start_date')
+        if start_date_book_str is not None:
             start_date_book = datetime.strptime(start_date_book_str, '%Y-%m-%d')
             book_days = date_now - start_date_book
             book_days = book_days.days
-
-
-            if 'start_date' in readed_book:
-                db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 'books.$.book_days': book_days, 'books.$.read_by': True}})
-                query.edit_message_text(text='Книга "{}" добавлена в прочитанные.'.format(user_book_name_strip))
-            else:
-                db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 
-                'books.$.start_date': now_date, 'books.$.book_days': 1, 'books.$.read_by': True}})
-                query.edit_message_text(text='Книга "{}" добавлена в прочитанные.'.format(user_book_name_strip))
-
-    
-    elif query_data == 'Удалить из избранного':
-        
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$unset': {'books.$.favorite': True}})
-        query.edit_message_text(text='Книга "{}" удалена из избранного.'.format(user_book_name_strip))
-
-    elif query_data == 'Удалить из отслеживаемого':
-
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$unset': {'books.$.in_progress': True}})
-        query.edit_message_text(text='Книга "{}" удалена из отслеживаемых.'.format(user_book_name_strip))
-
-    elif query_data == 'Удалить из прочитанного':
-
-        db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$unset': {'books.$.end_date': now_date, 
-        'books.$.read_by': True}})
-        query.edit_message_text(text='Книга "{}" удалена из прочитанного.'.format(user_book_name_strip))
-
+            db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 'books.$.book_days': book_days, 'books.$.read_by': True}})
+            query.edit_message_text(text='Книга добавлена в прочитанные')
+        else:
+            db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': {'books.$.end_date': now_date, 
+            'books.$.start_date': now_date, 'books.$.book_days': 1, 'books.$.read_by': True}})
+            query.edit_message_text(text='Книга добавлена в прочитанные')        
 
 def stop_conversation(update, context):
 
@@ -403,12 +474,15 @@ def main():
 
                             MessageHandler(Filters.regex('^(Удалить цель)$'), add_my_book_goal),
 
+                            MessageHandler(Filters.regex('^(Посмотреть цель)$'), add_my_book_goal),
+
                             MessageHandler(Filters.regex('^(Главное меню)$'), start_conversation),
 
                             MessageHandler(Filters.regex('^(Мои книги)$'), my_books)
 
                             ],
 
+            CHANGE_PAGE: [MessageHandler(Filters.text, change_page)],
             ADD_AUTHOR: [MessageHandler(Filters.text, add_book_author)],
             ADD_NAME: [MessageHandler(Filters.text, add_book_name)],
             MY_BOOK: [MessageHandler(Filters.text, my_book_information)],

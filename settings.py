@@ -13,4 +13,3 @@ MONGO_LINK = "mongodb+srv://readbooksbot:RK1AezPsXwuCEa2x@booksbotcluster-y09mz.
 MONGO_DB = "books"
 
 API_KEY = os.environ["BOT_TOKEN"]
-
