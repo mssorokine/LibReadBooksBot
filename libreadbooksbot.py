@@ -26,6 +26,8 @@ BOOKS_API_META = 'https://www.bgoperator.ru/bgmarket/item.shtml?itemId='
 
 PAGE_LENGTH=5
 
+FEEDBACK_CHAT_ID=-1001307804947
+
 READ_BY_BOOK_ICON = emojize(":closed_book:", use_aliases=True)
 FAVORITE_BOOK_ICON = emojize(":star:", use_aliases=True)
 IN_PROGRESS_BOOK_ICON = emojize(":eyes:", use_aliases=True)
@@ -199,7 +201,7 @@ def send_user_feedback(update, context):
     first_name = user['first_name']
     last_name = user['last_name']
     context.bot.send_message(
-        chat_id=-1001307804947, text=f'*username*: {username}\n*first_name*: {first_name}\n*last_name*: {last_name}\n*feedback*: {user_feedback}', 
+        chat_id=FEEDBACK_CHAT_ID, text=f'*username*: {username}\n*first_name*: {first_name}\n*last_name*: {last_name}\n*feedback*: {user_feedback}', 
         parse_mode=ParseMode.MARKDOWN)
     update.message.reply_text(f'Спасибо тебе за отзыв, котан {CAT_FACE_ICON}', reply_markup=markup_main)
     return CHOOSING_MAIN
