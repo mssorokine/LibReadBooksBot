@@ -3,32 +3,44 @@ import logging
 from datetime import datetime
 
 import math
+import random
+import time
 
-from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
+from emoji import emojize
+from functools import wraps
+from telegram import (ReplyKeyboardMarkup, ChatAction, ParseMode, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler)
 
 import settings
 from db import db, get_or_create_user
+from api_query_book import *
 
 logging.basicConfig(format='%(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE, CHANGE_PAGE = range(7)
+CHOOSING_MAIN, ADD_MY_GOAL, ADD_NAME, ADD_AUTHOR, MY_BOOK, END_BOOK_DATE, CHANGE_PAGE, SEND_FEEDBACK, ADD_NAME_CATALOG = range(9)
+
+BOOKS_API_META = 'https://www.bgoperator.ru/bgmarket/item.shtml?itemId='
 
 PAGE_LENGTH=5
 
+FEEDBACK_CHAT_ID=-1001307804947
+
+READ_BY_BOOK_ICON = emojize(":closed_book:", use_aliases=True)
+FAVORITE_BOOK_ICON = emojize(":star:", use_aliases=True)
+IN_PROGRESS_BOOK_ICON = emojize(":eyes:", use_aliases=True)
+CAT_FACE_ICON = emojize(":cat_face:", use_aliases=True)
+
 keyboard_main = [['Мои книги', 'Мои цели', 'Статистика'],
-                    ['Добавить книгу']]
+                    ['Добавить книгу'],
+                    ['Обратная связь']]
 
 keyboard_add_book = [['Из каталога', 'Вручную'],
                         ['Главное меню']]
 
 keyboard_user_addition = [['В избранное', 'Прочитал'],
-                            ['Главное меню']]
-
-keyboard_search_book = [['По названию', 'По автору'],
                             ['Главное меню']]
 
 
@@ -46,9 +58,7 @@ keyboard_my_books = [['Избранные', 'Отслеживаемые', 'Пр�
                         ['Все книги'],
                         ['Главное меню']]
 
-keyboard_goal_variables = [['Создать цель', 'Изменить цель'], 
-
-                            ['Удалить цель', 'Посмотреть цель'],
+keyboard_goal_variables = [['Изменить цель', 'Удалить цель', 'Посмотреть цель'],
 
                             ['Главное меню']]
 
@@ -75,6 +85,15 @@ del_favorits_markup = InlineKeyboardMarkup(keyboard_del_from_favorits)
 del_progress_markup = InlineKeyboardMarkup(keyboard_del_from_progress)
 del_read_by_markup = InlineKeyboardMarkup(keyboard_del_from_readby)
 
+def send_typing_action(func):
+
+    def command_func(update, context, *args, **kwargs):
+        context.bot.send_chat_action(chat_id=update.effective_message.chat_id, action=ChatAction.TYPING)
+        time.sleep(random.uniform(0,2))
+        return func(update, context,  *args, **kwargs)
+    return command_func
+
+@send_typing_action
 def start_conversation(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -87,6 +106,7 @@ def start_conversation(update, context):
 
     return CHOOSING_MAIN
 
+@send_typing_action
 def help_conversation(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -101,17 +121,60 @@ def help_conversation(update, context):
         '/start - команда вызова главного меню\n'
         '/stop - команда окончания работы с ботом'.format(username), reply_markup=ReplyKeyboardRemove())
 
-def add_book(update, context):
-    update.message.reply_text('Введите название книги')
-    user = get_or_create_user(db, update.message)
-    return ADD_NAME
+@send_typing_action
+def add_book_variables(update, context):
 
+    user_text = update.message.text
+    context.user_data['choice'] = user_text
+    update.message.reply_text('Выберите вариант добавления книги', reply_markup=markup_add_book)
+    user = get_or_create_user(db, update.message)
+    
+@send_typing_action
+def add_book(update, context):
+    text = update.message.text
+    context.user_data['choice'] = text
+    user_choice = context.user_data['choice']
+    if user_choice == 'Вручную':
+        update.message.reply_text('Введите название книги')
+        return ADD_NAME
+    elif user_choice == 'Из каталога':
+        update.message.reply_text('Введите точное название книги')
+        return ADD_NAME_CATALOG
+    else:
+        update.message.reply_text('Возвращаюсь в главное меню', reply_markup=markup_main)
+        return CHOOSING_MAIN
+
+@send_typing_action
+def add_book_name_catalog(update, context):
+    user = get_or_create_user(db, update.message)
+    book_name_catalog = update.message.text
+    book_name_catalog = book_name_catalog.strip()
+    request_data = {'query': query, 'variables': {'cond': [{'attr': 'name', 'ct': 'EQ', 'val': book_name_catalog}]}}
+    search_request = requests.post(URL, headers=HEADERS, json=request_data)
+    response_content = json.loads(search_request.content.decode('utf-8'))
+    books = response_content.get('data', {}).get('meta', {}).get('getSrcObs').get('edges', {})
+    if books:
+        for book in books:
+            book_name = book['node']['name']
+            book_author = book['node']['author']
+            book_id = book['node']['id']
+            book_url = BOOKS_API_META + book_id
+            db.users.update_one({'_id': user['_id']}, {'$addToSet': {'books': {'name': book_name, 'author': book_author, 'url': book_url}}})
+            update.message.reply_text(f'Вы добавили книгу "{book_name}" автора "{book_author}"', reply_markup=markup_main)
+            return CHOOSING_MAIN
+    else:
+        update.message.reply_text('Нет такой книги. Попробуй еще раз.')
+        return ADD_NAME_CATALOG
+
+
+@send_typing_action
 def add_book_name(update, context):
     book_name = update.message.text 
     context.user_data['book_name'] = book_name
     update.message.reply_text('Введите имя автора')
     return ADD_AUTHOR
 
+@send_typing_action
 def add_book_author(update, context):
     book_author = update.message.text
     context.user_data['book_author'] = book_author
@@ -125,6 +188,25 @@ def add_book_author(update, context):
 
     return CHOOSING_MAIN
     
+@send_typing_action
+def user_feedback(update, context):
+    update.message.reply_text('Оставь свой отзыв, я буду ему рад и постараюсь стать лучше.')
+    return SEND_FEEDBACK
+
+@send_typing_action
+def send_user_feedback(update, context):
+    user_feedback = update.message.text
+    user = get_or_create_user(db, update.message)
+    username = user['username']
+    first_name = user['first_name']
+    last_name = user['last_name']
+    context.bot.send_message(
+        chat_id=FEEDBACK_CHAT_ID, text=f'*username*: {username}\n*first_name*: {first_name}\n*last_name*: {last_name}\n*feedback*: {user_feedback}', 
+        parse_mode=ParseMode.MARKDOWN)
+    update.message.reply_text(f'Спасибо тебе за отзыв, котан {CAT_FACE_ICON}', reply_markup=markup_main)
+    return CHOOSING_MAIN
+
+@send_typing_action
 def my_book_statistic(update, context):
     user = get_or_create_user(db, update.message)
     user_id = user['user_id']
@@ -132,6 +214,7 @@ def my_book_statistic(update, context):
     update.message.reply_text(
         'Узнай свою статистику', reply_markup=markup_statistic)
 
+@send_typing_action
 def my_book_avg_time(update, context):
     user = get_or_create_user(db, update.message)
     user_id = user['user_id']
@@ -163,13 +246,14 @@ def my_book_avg_time(update, context):
     avg_time_book_read = int(avg_time_book_read)
     if text == 'Среднее время':
         update.message.reply_text(
-        f'Среднее время на чтение одной книги - {avg_time_book_read}', reply_markup=markup_main)
+        f'Среднее время на чтение одной книги - {avg_time_book_read} дня(ей)', reply_markup=markup_main)
     else:
         update.message.reply_text(
         f'Ты прочитал {lenght_read_books_user} книг(и)', reply_markup=markup_main)
     return CHOOSING_MAIN
 
 
+@send_typing_action
 def my_book_goal(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -183,6 +267,7 @@ def my_book_goal(update, context):
         'Создай себе книжную цель', reply_markup=markup_goal_variables)
     
 
+@send_typing_action
 def add_my_book_goal(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -208,6 +293,7 @@ def add_my_book_goal(update, context):
         return ADD_MY_GOAL
 
 
+@send_typing_action
 def received_book_information(update, context):
     
     user = get_or_create_user(db, update.message)
@@ -234,6 +320,7 @@ def received_book_information(update, context):
     return CHOOSING_MAIN
 
 
+@send_typing_action
 def my_books(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -245,8 +332,10 @@ def my_books(update, context):
 def query_user_book(user_id, update, context, current_page=1, **kwargs):
     
     user_filter = kwargs['user_filter_query']
+    show_book_status = False
     
     if not user_filter:
+        show_book_status = True
         user_books = db.users.find_one({'user_id': user_id})['books']
 
     else: 
@@ -273,10 +362,23 @@ def query_user_book(user_id, update, context, current_page=1, **kwargs):
             user_books = user_books[(current_page-1)*PAGE_LENGTH: len_books]
         else:
             user_books = user_books[(current_page-1)*PAGE_LENGTH: current_page*PAGE_LENGTH]
-
+        
         for books in user_books:
-            update.message.reply_text(f'{books["name"]} - {books["author"]}', reply_markup=get_keyboard)
+            books_status = []
+            if show_book_status:
+                if books.get("favorite"):
+                    books_status.append(FAVORITE_BOOK_ICON)
+                if books.get("read_by"):
+                    books_status.append(READ_BY_BOOK_ICON)
+                if books.get("in_progress"):
+                    books_status.append(IN_PROGRESS_BOOK_ICON)
 
+            if books.get("url"):
+                update.message.reply_text(f'{books["name"]} - {books["author"]} {" ".join(books_status)}\nСсылка: {books["url"]}', reply_markup=get_keyboard)
+            else:
+                update.message.reply_text(f'{books["name"]} - {books["author"]} {" ".join(books_status)}', reply_markup=get_keyboard)
+
+@send_typing_action
 def change_page(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -308,6 +410,7 @@ def change_page(update, context):
         update.message.reply_text('Возврат в главное меню', reply_markup=markup_main)
         return CHOOSING_MAIN
 
+@send_typing_action
 def my_book_information(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -341,7 +444,6 @@ def my_book_information(update, context):
     
     if user_text in query_book_information:
         books_query_result = query_user_book(user_id, update, context, **query_book_information[user_text])
-        print(books_query_result)
         update.message.reply_text('Выберите действие', reply_markup=markup_book_pagination)
         return CHANGE_PAGE
     
@@ -360,6 +462,7 @@ def query_books_data(user_id, user_book_name_strip, query, **kwargs):
     db.users.update({'user_id' : user_id , 'books.name': user_book_name_strip} , {'$set': kwargs['user_filter']})
     query.edit_message_text(text=kwargs['bot_message'])
 
+@send_typing_action
 def books_button(update, context):
 
     query = update.callback_query
@@ -435,6 +538,7 @@ def books_button(update, context):
             'books.$.start_date': now_date, 'books.$.book_days': 1, 'books.$.read_by': True}})
             query.edit_message_text(text='Книга добавлена в прочитанные')        
 
+@send_typing_action
 def stop_conversation(update, context):
 
     user = get_or_create_user(db, update.message)
@@ -458,7 +562,7 @@ def main():
         states={
             CHOOSING_MAIN: [
 
-                            MessageHandler(Filters.regex('^(Добавить книгу)$'), add_book),
+                            MessageHandler(Filters.regex('^(Добавить книгу)$'), add_book_variables),
 
                             MessageHandler(Filters.regex('^(Мои цели)$'), my_book_goal),
 
@@ -468,24 +572,30 @@ def main():
 
                             MessageHandler(Filters.regex('^(Количество книг)$'), my_book_avg_time),
 
-                            MessageHandler(Filters.regex('^(Создать цель)$'), add_my_book_goal),
-
                             MessageHandler(Filters.regex('^(Изменить цель)$'), add_my_book_goal),
 
                             MessageHandler(Filters.regex('^(Удалить цель)$'), add_my_book_goal),
 
                             MessageHandler(Filters.regex('^(Посмотреть цель)$'), add_my_book_goal),
 
+                            MessageHandler(Filters.regex('^(Из каталога)$'), add_book),
+
+                            MessageHandler(Filters.regex('^(Вручную)$'), add_book),
+
                             MessageHandler(Filters.regex('^(Главное меню)$'), start_conversation),
 
-                            MessageHandler(Filters.regex('^(Мои книги)$'), my_books)
+                            MessageHandler(Filters.regex('^(Мои книги)$'), my_books),
+
+                            MessageHandler(Filters.regex('^(Обратная связь)$'), user_feedback),
 
                             ],
 
             CHANGE_PAGE: [MessageHandler(Filters.text, change_page)],
             ADD_AUTHOR: [MessageHandler(Filters.text, add_book_author)],
+            ADD_NAME_CATALOG: [MessageHandler(Filters.text, add_book_name_catalog)],
             ADD_NAME: [MessageHandler(Filters.text, add_book_name)],
             MY_BOOK: [MessageHandler(Filters.text, my_book_information)],
+            SEND_FEEDBACK: [MessageHandler(Filters.text, send_user_feedback)],
             ADD_MY_GOAL: [MessageHandler(Filters.text, received_book_information)
                            ],
         
