@@ -163,8 +163,8 @@ def add_book_name_catalog(update, context):
             update.message.reply_text(f'Вы добавили книгу "{book_name}" автора "{book_author}"', reply_markup=markup_main)
             return CHOOSING_MAIN
     else:
-        update.message.reply_text('Нет такой книги. Попробуй еще раз.')
-        return ADD_NAME_CATALOG
+        update.message.reply_text('Нет такой книги. Попробуй еще раз.', reply_markup=markup_main)
+        return CHOOSING_MAIN
 
 
 @send_typing_action
