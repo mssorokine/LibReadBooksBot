@@ -4,6 +4,6 @@ MONGO_LINK = "mongodb://localhost:27017"
 
 MONGO_DB = "books"
 
-API_KEY = "828996500:AAGIviPaKqTCwbyJuHeYLolUHtjvfwtm4Ew"
+API_KEY = "TOKEN"
 
-BOOK_API_TOKEN = "bXNzb3Jva2luZUBnbWFpbC5jb206fiNSQTdNVDU0UUMwLlhwMW5zSENq"
+BOOK_API_TOKEN = "BOOK_TOKEN"
