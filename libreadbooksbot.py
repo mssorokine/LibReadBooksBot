@@ -560,7 +560,7 @@ def stop_conversation(update, context):
 
 def main():
 
-    readbooksbot = Updater(settings.API_KEY, request_kwargs=settings.PROXY, use_context=True)
+    readbooksbot = Updater(settings.API_KEY, use_context=True)
 
     dp = readbooksbot.dispatcher
 
