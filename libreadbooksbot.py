@@ -230,27 +230,35 @@ def my_book_avg_time(update, context):
     }}
 ])
     books_read_user = query_to_db.next()
-    read_books_user = books_read_user.get('books', [])
-    books_days_total = 0
-    for books in read_books_user:
-        user_start_date_str = books.get('start_date')
-        user_end_date_str = books.get('end_date')
-        user_start_date = datetime.strptime(user_start_date_str, '%Y-%m-%d')
-        user_end_date = datetime.strptime(user_end_date_str, '%Y-%m-%d')
-        user_book_delta = user_end_date - user_start_date
-        user_book_delta_days = user_book_delta.days
-        user_book_delta_days = abs(user_book_delta_days)
-        books_days_total += user_book_delta_days
-    lenght_read_books_user = len(read_books_user)
-    avg_time_book_read = books_days_total / lenght_read_books_user
-    avg_time_book_read = int(avg_time_book_read)
-    if text == 'Среднее время':
-        update.message.reply_text(
-        f'Среднее время на чтение одной книги - {avg_time_book_read} дня(ей)', reply_markup=markup_main)
+    read_books_user = books_read_user.get('books')
+    
+    if read_books_user:
+        books_days_total = 0
+        for books in read_books_user:
+            user_start_date_str = books.get('start_date')
+            user_end_date_str = books.get('end_date')
+            user_start_date = datetime.strptime(user_start_date_str, '%Y-%m-%d')
+            user_end_date = datetime.strptime(user_end_date_str, '%Y-%m-%d')
+            user_book_delta = user_end_date - user_start_date
+            user_book_delta_days = user_book_delta.days
+            user_book_delta_days = abs(user_book_delta_days)
+            books_days_total += user_book_delta_days
+    
+        lenght_read_books_user = len(read_books_user)
+        avg_time_book_read = books_days_total / lenght_read_books_user
+        avg_time_book_read = int(avg_time_book_read)
+        
+        if text == 'Среднее время':
+            update.message.reply_text(
+            f'Среднее время на чтение одной книги - {avg_time_book_read} дня(ей)', reply_markup=markup_main)
+        else:
+            update.message.reply_text(
+            f'Ты прочитал {lenght_read_books_user} книг(и)', reply_markup=markup_main)
+        return CHOOSING_MAIN
+    
     else:
-        update.message.reply_text(
-        f'Ты прочитал {lenght_read_books_user} книг(и)', reply_markup=markup_main)
-    return CHOOSING_MAIN
+        update.message.reply_text('Кажется, что у тебя нет прочитанных книг. Возвращаюсь в главное меню.', reply_markup=markup_main)
+        return CHOOSING_MAIN
 
 
 @send_typing_action
