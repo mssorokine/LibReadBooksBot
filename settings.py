@@ -1,17 +1,9 @@
 import os, sys
 
-PROXY = {
-    'proxy_url': 'socks5://t2.learn.python.ru:1080',
-    'urllib3_proxy_kwargs': {
-        'username': 'learn', 
-        'password': 'python'
-    }
-}
-
-MONGO_LINK = "mongodb+srv://readbooksbot:RK1AezPsXwuCEa2x@booksbotcluster-y09mz.mongodb.net/books"
+MONGO_LINK = "mongodb://localhost:27017"
 
 MONGO_DB = "books"
 
-API_KEY = os.environ["BOT_TOKEN"]
+API_KEY = "828996500:AAGIviPaKqTCwbyJuHeYLolUHtjvfwtm4Ew"
 
-BOOK_API_TOKEN = os.environ["BOOK_TOKEN"]
+BOOK_API_TOKEN = "bXNzb3Jva2luZUBnbWFpbC5jb206fiNSQTdNVDU0UUMwLlhwMW5zSENq"
